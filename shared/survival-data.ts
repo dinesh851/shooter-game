@@ -1,0 +1,37 @@
+// Auto-generated from Kenney Survival Kit (CC0). model -> scaled [w,h,d].
+export const SURVIVAL_SCALE = 4;
+export const SURVIVAL_SIZE: Record<string, [number, number, number]> = {
+  "barrel": [0.946, 1.376, 0.946],
+  "barrel-open": [0.946, 1.376, 0.946],
+  "box": [1, 1, 1],
+  "box-large": [1, 1, 2],
+  "box-large-open": [1, 1.225, 2],
+  "box-open": [1, 1.225, 1],
+  "bucket": [0.577, 0.768, 0.577],
+  "chest": [1.042, 0.851, 1.562],
+  "resource-planks": [1.492, 0.374, 2.504],
+  "resource-wood": [0.82, 0.25, 0.348],
+  "resource-stone": [0.661, 0.427, 0.569],
+  "resource-stone-large": [1.504, 0.641, 1.348],
+  "fence": [2, 2.07, 0.171],
+  "fence-fortified": [2, 2.07, 0.212],
+  "fence-doorway": [2, 2.07, 1.096],
+  "rock-a": [2.221, 1.571, 2.486],
+  "rock-b": [3.339, 1.674, 2.899],
+  "rock-c": [3.135, 2.04, 2.264],
+  "metal-panel": [2, 2, 0.2],
+  "metal-panel-narrow": [1, 2, 0.2],
+  "metal-panel-screws": [2, 2, 0.25],
+  "metal-panel-screws-narrow": [1, 2, 0.25],
+  "metal-panel-screws-half": [2, 1, 0.25],
+  "structure-metal": [2.142, 2, 2.142],
+  "structure-metal-wall": [2.142, 2, 0.356],
+  "signpost": [0.856, 1.84, 0.172],
+  "signpost-single": [0.835, 1.84, 0.172],
+  "structure": [2, 2, 2],
+  "structure-metal-doorway": [2.142, 2, 1.167],
+  "bottle-large": [0.29, 0.575, 0.335],
+  "bottle": [0.211, 0.615, 0.243],
+};
+export const SURVIVAL_NAMES = Object.keys(SURVIVAL_SIZE);
+

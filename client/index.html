@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+    <title>LAN Shooter</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="app"></div>
+
+    <!-- Start menu -->
+    <div id="menu" class="overlay">
+      <div class="panel">
+        <h1>LAN&nbsp;SHOOTER</h1>
+        <p class="sub">Office LAN · Team Deathmatch</p>
+        <label>Callsign</label>
+        <input id="name" maxlength="16" placeholder="Player" autocomplete="off" />
+        <button id="play">CONNECT</button>
+        <p id="status" class="status"></p>
+        <ul class="controls">
+          <li><b>WASD</b> move · <b>Space</b> jump</li>
+          <li><b>Mouse</b> look · <b>Click</b> fire · <b>R</b> reload</li>
+          <li><b>Tab</b> scoreboard · <b>Esc</b> release mouse</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- HUD -->
+    <div id="hud" class="hidden">
+      <div id="ads"></div>
+      <div id="scope">
+        <div class="surround"></div>
+        <div class="lens"></div>
+        <div class="reticle">
+          <svg viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet">
+            <line x1="50" y1="3" x2="50" y2="44" stroke="rgba(0,0,0,0.85)" stroke-width="0.5" />
+            <line x1="50" y1="56" x2="50" y2="97" stroke="rgba(0,0,0,0.85)" stroke-width="0.5" />
+            <line x1="3" y1="50" x2="44" y2="50" stroke="rgba(0,0,0,0.85)" stroke-width="0.5" />
+            <line x1="56" y1="50" x2="97" y2="50" stroke="rgba(0,0,0,0.85)" stroke-width="0.5" />
+            <circle cx="50" cy="50" r="0.7" fill="rgba(0,0,0,0.9)" />
+            <g fill="rgba(0,0,0,0.7)">
+              <circle cx="50" cy="60" r="0.5" />
+              <circle cx="50" cy="68" r="0.5" />
+              <circle cx="50" cy="76" r="0.5" />
+              <circle cx="40" cy="50" r="0.5" />
+              <circle cx="32" cy="50" r="0.5" />
+              <circle cx="60" cy="50" r="0.5" />
+              <circle cx="68" cy="50" r="0.5" />
+            </g>
+          </svg>
+        </div>
+      </div>
+      <div id="crosshair"></div>
+      <div id="reddot"></div>
+      <div id="topbar">
+        <span id="score0" class="score t0">0</span>
+        <span id="timer">5:00</span>
+        <span id="score1" class="score t1">0</span>
+      </div>
+      <div id="phase" class="phase"></div>
+      <div id="killfeed"></div>
+      <div id="hitmarker"></div>
+      <div id="reloading" class="hidden">RELOADING</div>
+      <div id="vitals">
+        <div id="hpwrap">
+          <div id="hpbar"><div id="hpfill"></div></div>
+          <span id="health">100</span>
+        </div>
+        <div id="gun">
+          <span id="weaponname">AR-15 Rifle</span>
+          <span id="ammo">30<i>/30</i></span>
+        </div>
+      </div>
+      <div id="weaponlist"></div>
+      <div id="damage" class="damage"></div>
+      <div id="scoreboard" class="hidden"></div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

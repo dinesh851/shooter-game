@@ -1,0 +1,547 @@
+﻿:root {
+  --t0: #3b82f6;
+  --t1: #e23b3b;
+  --bg: #12141a;
+  /* themeable UI variables - cycled with Ctrl+K (see main.ts THEMES) */
+  --panel-bg: rgba(20, 24, 32, 0.92);
+  --panel-border: #2b3340;
+  --hud-bg: rgba(10, 13, 18, 0.6);
+  --hud-border: #232b36;
+  --text: #e8edf4;
+  --text-dim: #8b97a8;
+  --text-bright: #eafff2;
+  --accent: #ffd66e;
+  --grad-a: #4ea1ff;
+  --grad-b: #7bc0ff;
+  --radius: 14px;
+  --ui-font: "Segoe UI", system-ui, -apple-system, sans-serif;
+  --panel-glow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  --menu-bg: radial-gradient(circle at 50% 30%, #1e2531, #0c0e13 70%);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--ui-font);
+  user-select: none;
+}
+
+#app canvas {
+  display: block;
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* ---------- Menu ---------- */
+.overlay {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: var(--menu-bg);
+  z-index: 10;
+}
+
+.panel {
+  width: 360px;
+  padding: 28px 28px 22px;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  box-shadow: var(--panel-glow);
+  text-align: center;
+}
+
+.panel h1 {
+  font-size: 30px;
+  letter-spacing: 6px;
+  background: linear-gradient(90deg, var(--grad-a), var(--grad-b));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.panel .sub {
+  color: var(--text-dim);
+  margin: 6px 0 22px;
+  font-size: 13px;
+  letter-spacing: 1px;
+}
+
+.panel label {
+  display: block;
+  text-align: left;
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+}
+
+.panel input {
+  width: 100%;
+  padding: 11px 12px;
+  background: #0e1117;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  color: #fff;
+  font-size: 15px;
+  outline: none;
+}
+
+.panel input:focus {
+  border-color: var(--t0);
+}
+
+.panel button {
+  width: 100%;
+  margin-top: 16px;
+  padding: 12px;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: #06121f;
+  background: linear-gradient(90deg, var(--grad-a), var(--grad-b));
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.panel button:active {
+  transform: translateY(1px);
+}
+
+.panel .status {
+  min-height: 18px;
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--t1);
+}
+
+.controls {
+  list-style: none;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid #222b36;
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.9;
+}
+
+.controls b {
+  color: var(--text);
+}
+
+/* ---------- HUD ---------- */
+#hud {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+}
+
+#crosshair,
+#crosshair::before,
+#crosshair::after {
+  position: absolute;
+}
+
+#crosshair {
+  left: 50%;
+  top: 50%;
+  width: 3px;
+  height: 3px;
+  margin: -1.5px 0 0 -1.5px;
+  background: #eafff2;
+  border-radius: 50%;
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.8);
+}
+
+#crosshair::before,
+#crosshair::after {
+  content: "";
+  background: rgba(234, 255, 242, 0.85);
+}
+#crosshair::before {
+  left: -9px;
+  top: 1px;
+  width: 6px;
+  height: 1px;
+  box-shadow: 13px 0 0 rgba(234, 255, 242, 0.85);
+}
+#crosshair::after {
+  left: 1px;
+  top: -9px;
+  width: 1px;
+  height: 6px;
+  box-shadow: 0 13px 0 rgba(234, 255, 242, 0.85);
+}
+
+#reddot {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  margin: -3.5px 0 0 -3.5px;
+  border-radius: 50%;
+  background: #ff2a2a;
+  box-shadow: 0 0 6px 2px rgba(255, 40, 40, 0.9), 0 0 2px 1px #fff inset;
+  display: none;
+}
+#reddot.on {
+  display: block;
+}
+
+#topbar {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 8px 18px;
+  background: var(--hud-bg);
+  border: 1px solid var(--hud-border);
+  border-radius: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+#timer {
+  font-size: 22px;
+  font-weight: 700;
+  min-width: 72px;
+  text-align: center;
+}
+
+.score {
+  font-size: 24px;
+  font-weight: 800;
+  min-width: 36px;
+  text-align: center;
+}
+.score.t0 {
+  color: var(--t0);
+}
+.score.t1 {
+  color: var(--t1);
+}
+
+.phase {
+  position: absolute;
+  top: 78px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 16px;
+  letter-spacing: 2px;
+  color: var(--accent);
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
+  text-align: center;
+}
+
+#killfeed {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  align-items: flex-end;
+  font-size: 13px;
+}
+
+#killfeed .row {
+  background: var(--hud-bg);
+  padding: 4px 9px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+#killfeed .t0 {
+  color: var(--t0);
+}
+#killfeed .t1 {
+  color: var(--t1);
+}
+#killfeed .head {
+  color: var(--accent);
+}
+
+#vitals {
+  position: absolute;
+  bottom: 22px;
+  left: 28px;
+  display: flex;
+  gap: 26px;
+  align-items: baseline;
+}
+
+#hpwrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+#hpbar {
+  width: 220px;
+  height: 18px;
+  background: rgba(8, 12, 18, 0.7);
+  border: 1px solid var(--panel-border);
+  border-radius: 5px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+
+#hpfill {
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, #3ad17a, #79f2a6);
+  transition: width 0.12s linear, background 0.2s linear;
+}
+#hpfill.mid {
+  background: linear-gradient(90deg, #d1a23a, #f2d479);
+}
+#hpfill.low {
+  background: linear-gradient(90deg, #d13a3a, #ff6a4e);
+}
+
+#health {
+  font-size: 34px;
+  font-weight: 800;
+  color: var(--text-bright);
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.7);
+  min-width: 56px;
+}
+#health.low {
+  color: var(--t1);
+}
+
+#gun {
+  display: flex;
+  flex-direction: column;
+}
+
+#weaponname {
+  font-size: 13px;
+  letter-spacing: 1px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+}
+
+#ammo {
+  font-size: 30px;
+  font-weight: 800;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+#ammo i {
+  font-style: normal;
+  font-size: 16px;
+  color: var(--text-dim);
+  font-weight: 500;
+}
+#ammo.empty {
+  color: var(--t1);
+}
+
+#reloading {
+  position: absolute;
+  left: 50%;
+  top: 58%;
+  transform: translateX(-50%);
+  font-size: 16px;
+  letter-spacing: 3px;
+  color: var(--accent);
+  font-weight: 700;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.8);
+  animation: pulse 0.8s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+#weaponlist {
+  position: absolute;
+  bottom: 22px;
+  right: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-end;
+}
+#weaponlist .w {
+  font-size: 12px;
+  color: var(--text-dim);
+  background: var(--hud-bg);
+  padding: 3px 9px;
+  border-radius: 5px;
+  letter-spacing: 0.5px;
+}
+#weaponlist .w b {
+  color: #56627a;
+  margin-right: 6px;
+}
+#weaponlist .w.active {
+  color: #fff;
+  background: rgba(78, 161, 255, 0.25);
+  border: 1px solid rgba(78, 161, 255, 0.5);
+}
+#weaponlist .w.active b {
+  color: #cfe2ff;
+}
+
+#minimap {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  width: 188px;
+  height: 188px;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  background: rgba(10, 13, 18, 0.35);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+/* Sniper scope: black surround with a circular lens + reticle, shown when scoped */
+#scope {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  display: none;
+  z-index: 6;
+}
+#scope.on {
+  display: block;
+}
+#scope .surround {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 50%, transparent 0 31vh, rgba(0, 0, 0, 0.985) 32vh);
+}
+#scope .lens {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 64vh;
+  height: 64vh;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  border: 4px solid rgba(8, 8, 8, 0.95);
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.12), inset 0 0 60px 10px rgba(0, 0, 0, 0.75);
+}
+#scope .reticle {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 62vh;
+  height: 62vh;
+  transform: translate(-50%, -50%);
+}
+#scope .reticle svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* ADS vignette â€” darkens screen edges when aiming */
+#ads {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s ease-out;
+  box-shadow: inset 0 0 200px 120px rgba(0, 0, 0, 0.85);
+}
+#ads.on {
+  opacity: 1;
+}
+#ads.scope {
+  box-shadow: inset 0 0 0 2000px rgba(0, 0, 0, 0);
+  background: radial-gradient(circle at 50% 50%, transparent 22%, rgba(0, 0, 0, 0.97) 23%);
+}
+
+#hitmarker {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 22px;
+  height: 22px;
+  margin: -11px 0 0 -11px;
+  opacity: 0;
+  background: radial-gradient(circle, transparent 38%, #fff 40%, transparent 52%);
+  transform: rotate(45deg);
+}
+
+.damage {
+  position: absolute;
+  inset: 0;
+  box-shadow: inset 0 0 160px 40px rgba(255, 40, 40, 0.6);
+  opacity: 0;
+  transition: opacity 0.35s ease-out;
+}
+
+#scoreboard {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  min-width: 480px;
+  background: rgba(10, 13, 18, 0.92);
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  padding: 18px 20px;
+  font-size: 14px;
+}
+
+#scoreboard h2 {
+  text-align: center;
+  font-size: 15px;
+  letter-spacing: 2px;
+  color: var(--text-dim);
+  margin-bottom: 12px;
+}
+
+#scoreboard table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+#scoreboard th,
+#scoreboard td {
+  padding: 5px 10px;
+  text-align: left;
+}
+#scoreboard th {
+  color: var(--text-dim);
+  font-weight: 600;
+  border-bottom: 1px solid #232b36;
+}
+#scoreboard td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+#scoreboard tr.t0 td:first-child {
+  border-left: 3px solid var(--t0);
+}
+#scoreboard tr.t1 td:first-child {
+  border-left: 3px solid var(--t1);
+}
+#scoreboard tr.me {
+  background: rgba(255, 255, 255, 0.06);
+}

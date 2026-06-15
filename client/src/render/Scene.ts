@@ -148,7 +148,6 @@ export class Scene {
   // frame used to make the gun reappear over the death cam)
   private vmAlive = true;
   private vmScoped = false;
-  private gloveMat!: THREE.MeshStandardMaterial; // first-person glove, recoloured per team
   private gunHolder = new THREE.Group(); // holds the current gun model inside viewModel
   private gunTemplates: Record<string, THREE.Object3D> = {};
   private currentWeapon = "rifle";
@@ -470,44 +469,10 @@ export class Scene {
     this.gunHolder.add(body, barrel);
     g.add(this.gunHolder);
 
-    // first-person arms gripping the gun, so it doesn't read as a floating
-    // weapon. Built to MATCH the player Character.ts look: flat-shaded boxes, the
-    // same skin tone for the forearm and a team-coloured boxy glove. They live in
-    // the viewModel group so they sway/recoil/ADS with the gun and are hidden by
-    // the same alive/scoped visibility logic.
-    this.gloveMat = new THREE.MeshStandardMaterial({
-      color: TEAM_COLORS[0] ?? 0x4f8cff, roughness: 0.62, metalness: 0.08, flatShading: true,
-    });
-    const right = this.makeArm(); // trigger hand, near the grip
-    right.position.set(0.05, -0.06, 0.06);
-    right.rotation.set(0.5, 0.1, -0.16);
-    const left = this.makeArm(); // support hand, forward on the foregrip
-    left.position.set(-0.05, -0.05, -0.27);
-    left.rotation.set(0.72, -0.1, 0.26);
-    g.add(right, left);
+    // No first-person arms/hands — the viewmodel is gun-only.
 
     g.position.set(0.2, -0.2, -0.5);
     return g;
-  }
-
-  // one procedural first-person arm matching Character.ts: a team-coloured glove
-  // box at the group origin (sits on the gun) and a skin-toned forearm box
-  // trailing down-and-back toward the bottom of the screen. SKIN_COLOR 0xe0a479
-  // is the same tone the Character uses for its forearms.
-  private makeArm(): THREE.Group {
-    const skin = new THREE.MeshStandardMaterial({ color: 0xe0a479, roughness: 0.78, metalness: 0, flatShading: true });
-    const arm = new THREE.Group();
-    const glove = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.085, 0.12), this.gloveMat);
-    const forearm = new THREE.Mesh(new THREE.BoxGeometry(0.082, 0.34, 0.082), skin);
-    forearm.position.set(0, -0.2, 0.02);
-    arm.add(glove, forearm);
-    arm.traverse((o: any) => {
-      if (o.isMesh) {
-        o.castShadow = false; // viewmodels never cast shadows
-        o.frustumCulled = false;
-      }
-    });
-    return arm;
   }
 
   // ---- gun models (Kenney CC0) -------------------------------------------
@@ -645,8 +610,6 @@ export class Scene {
   setLocalTeam(team: number) {
     if (team === this.localTeam) return;
     this.localTeam = team;
-    // first-person glove takes the local team's colour, like the character's hands
-    if (this.gloveMat) this.gloveMat.color.setHex(TEAM_COLORS[team] ?? 0x999999);
     this.remotes.forEach((r) => {
       if (r.tag) r.tag.visible = r.team === team;
     });

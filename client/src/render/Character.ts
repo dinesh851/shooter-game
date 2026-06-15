@@ -435,3 +435,89 @@ export class Character {
 function clamp01(v: number): number {
   return v < 0 ? 0 : v > 1 ? 1 : v;
 }
+
+// Approximate standing height of the "build-unit" character before it is scaled to
+// PLAYER_HEIGHT (top of helmet with feet at 0). Used to size the first-person arms
+// to the same real-world scale as the remote player characters.
+const BUILD_HEIGHT =
+  FOOT_H + LOWER_LEG_LEN + UPPER_LEG_LEN + HIP_H + TORSO_H + NECK_H + HEAD_SIZE * 1.28;
+
+export interface FirstPersonArms {
+  group: THREE.Group; // add this to the weapon view-model group
+  setTeamColor: (hex: number) => void;
+  dispose: () => void;
+}
+
+// Build the local player's first-person arms from the SAME geometry, proportions,
+// and materials as the Character used for every remote player: a team-coloured
+// upper arm + accent shoulder pad + skin forearm + team-coloured glove. Each arm is
+// scaled to the character's real-world size and aimed so its hand sits on the gun.
+export function makeFirstPersonArms(teamColor: number, accentColor: number): FirstPersonArms {
+  const teamMat = new THREE.MeshStandardMaterial({
+    color: teamColor, roughness: 0.62, metalness: 0.08,
+    emissive: new THREE.Color(teamColor), emissiveIntensity: 0.06, flatShading: true,
+  });
+  const accentMat = new THREE.MeshStandardMaterial({
+    color: accentColor, roughness: 0.35, metalness: 0.25,
+    emissive: new THREE.Color(accentColor), emissiveIntensity: 0.5, flatShading: true,
+  });
+  const skinMat = new THREE.MeshStandardMaterial({
+    color: SKIN_COLOR, roughness: 0.78, metalness: 0.0, flatShading: true,
+  });
+
+  const scale = PLAYER_HEIGHT / BUILD_HEIGHT; // same arm size as a remote character
+  // full straight-arm reach (shoulder pivot to hand centre), in metres
+  const reach = (UPPER_ARM_LEN + LOWER_ARM_LEN + ARM_W * 0.3) * scale;
+
+  // one arm exactly like Character.buildArm, but as a standalone limb
+  const buildArm = (): THREE.Group => {
+    const pivot = new THREE.Group();
+    pivot.scale.setScalar(scale); // children are in build-units; pose is in metres
+    const upper = new THREE.Mesh(new THREE.BoxGeometry(ARM_W, UPPER_ARM_LEN, ARM_W), teamMat);
+    upper.position.set(0, -UPPER_ARM_LEN * 0.5, 0);
+    const pad = new THREE.Mesh(new THREE.BoxGeometry(ARM_W * 1.25, ARM_W * 0.7, ARM_W * 1.25), accentMat);
+    pad.position.set(0, -ARM_W * 0.15, 0);
+    const elbow = new THREE.Group();
+    elbow.position.set(0, -UPPER_ARM_LEN, 0);
+    const lower = new THREE.Mesh(new THREE.BoxGeometry(ARM_W * 0.9, LOWER_ARM_LEN, ARM_W * 0.9), skinMat);
+    lower.position.set(0, -LOWER_ARM_LEN * 0.5, 0);
+    const hand = new THREE.Mesh(new THREE.BoxGeometry(ARM_W * 1.05, ARM_W * 0.8, ARM_W * 1.05), teamMat);
+    hand.position.set(0, -LOWER_ARM_LEN - ARM_W * 0.3, 0);
+    elbow.add(lower, hand);
+    pivot.add(upper, pad, elbow);
+    pivot.traverse((o: any) => { if (o.isMesh) { o.castShadow = false; o.frustumCulled = false; } });
+    return pivot;
+  };
+
+  // place a straight arm so its hand lands on `hand` (view-model space), with the
+  // shoulder offset back toward the body along `bodyDir` (hand -> shoulder).
+  const DOWN = new THREE.Vector3(0, -1, 0);
+  const aim = (pivot: THREE.Group, hand: THREE.Vector3, bodyDir: THREE.Vector3) => {
+    const dir = bodyDir.clone().normalize();
+    const shoulder = hand.clone().addScaledVector(dir, reach);
+    pivot.position.copy(shoulder);
+    const toHand = hand.clone().sub(shoulder).normalize(); // = -dir
+    pivot.quaternion.setFromUnitVectors(DOWN, toHand);
+  };
+
+  const group = new THREE.Group();
+  const right = buildArm();
+  const left = buildArm();
+  // trigger hand at the grip; support hand forward on the foregrip. bodyDir points
+  // down-and-back (+Z toward the camera) so the upper arms trail off the lower edge.
+  aim(right, new THREE.Vector3(0.02, -0.05, -0.02), new THREE.Vector3(0.35, -1.0, 1.05));
+  aim(left, new THREE.Vector3(-0.04, -0.06, -0.27), new THREE.Vector3(-0.15, -1.0, 0.95));
+  group.add(right, left);
+
+  return {
+    group,
+    setTeamColor: (hex: number) => {
+      teamMat.color.setHex(hex);
+      teamMat.emissive.setHex(hex);
+    },
+    dispose: () => {
+      group.traverse((o: any) => { if (o.isMesh && o.geometry) o.geometry.dispose(); });
+      teamMat.dispose(); accentMat.dispose(); skinMat.dispose();
+    },
+  };
+}

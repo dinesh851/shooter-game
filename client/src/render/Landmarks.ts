@@ -11,7 +11,7 @@ export class Landmarks {
 
   constructor() {
     const loader = new GLTFLoader();
-    const byModel = new Map<string, { x: number; z: number; yaw: number; w: number; h: number; d: number }[]>();
+    const byModel = new Map<string, { x: number; z: number; yaw: number; w: number; h: number; d: number; sink?: number }[]>();
     for (const lm of LANDMARKS) {
       for (const pr of lm.props) {
         if (pr.model === "rock") continue;
@@ -44,7 +44,10 @@ export class Landmarks {
           const b2 = new THREE.Box3().setFromObject(m);
           const cx = (b2.min.x + b2.max.x) / 2;
           const cz = (b2.min.z + b2.max.z) / 2;
-          m.position.set(pr.x - cx, terrainHeight(pr.x, pr.z) - b2.min.y, pr.z - cz);
+          // sit the model's lowest point on the terrain, then optionally sink it a
+          // little so models with uneven/floating base geometry (the log huts) meet
+          // the grass instead of hovering over a shadow gap.
+          m.position.set(pr.x - cx, terrainHeight(pr.x, pr.z) - b2.min.y - (pr.sink ?? 0), pr.z - cz);
           this.group.add(m);
         }
       });

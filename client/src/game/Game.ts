@@ -73,6 +73,7 @@ export class Game {
   constructor(room: Room<any>, sessionId: string) {
     this.room = room;
     this.meId = sessionId;
+    (window as any).__room = room; // dev: diagnostics read phase / authoritative pos
     this.scene = new Scene(document.getElementById("app")!);
     this.input = new Input(this.scene.renderer.domElement);
     this.hud = new Hud();
@@ -196,12 +197,15 @@ export class Game {
     if (me && !me.alive && this.wasAlive) this.onDeath(now, me);
     if (me) this.wasAlive = me.alive;
 
-    if (me && me.alive) {
+    // warmup freezes everyone at spawn (a "get ready" countdown); don't predict or
+    // send movement, just mirror the server so control resumes seamlessly at live.
+    const frozen = this.room.state.phase === "warmup";
+    if (me && me.alive && !frozen) {
       this.predictAndSend(dt * 1000, effYaw, effPitch);
     } else if (me) {
-      // dead: mirror the FULL authoritative state (incl. velocity/onGround/crouch)
-      // so prediction restarts cleanly at respawn instead of carrying dead-man
-      // velocity (which caused a rubber-band on every respawn).
+      // dead or warmup-frozen: mirror the FULL authoritative state (incl. velocity/
+      // onGround/crouch) so prediction restarts cleanly instead of carrying stale
+      // velocity (which caused a rubber-band on every respawn / round start).
       this.pred = { x: me.x, y: me.y, z: me.z, vx: me.vx, vy: me.vy, vz: me.vz, onGround: me.onGround, crouch: me.crouch };
       this.pending.length = 0;
       this.lastAck = me.lastSeq;

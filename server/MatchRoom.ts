@@ -191,7 +191,9 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private updateBots(dtMs: number) {
-    if (this.state.phase === "lobby" || this.state.phase === "ended") return;
+    // bots hold at spawn during warmup too, so nobody is mid-stride when the
+    // round goes live (and there is no teleport when live begins)
+    if (this.state.phase !== "live") return;
     const dt = dtMs / 1000;
     this.bots.forEach((b, id) => {
       const p = this.state.players.get(id);
@@ -268,6 +270,17 @@ export class MatchRoom extends Room<MatchState> {
     this.state.players.forEach((p, id) => {
       const q = this.inputs.get(id);
       if (!q) return;
+
+      // warmup is a "get ready" countdown: everyone is held frozen at their spawn
+      // so the round can go live in place — no jarring teleport when it starts.
+      // Consume inputs without moving, but advance lastSeq so the client clears its
+      // pending queue (otherwise it replays a backlog and lurches when live starts).
+      if (this.state.phase === "warmup") {
+        for (const cmd of q) if (cmd.seq > p.lastSeq) p.lastSeq = cmd.seq;
+        q.length = 0;
+        p.vx = 0; p.vy = 0; p.vz = 0;
+        return;
+      }
 
       if (!p.alive) {
         q.length = 0; // ignore inputs while dead
@@ -348,10 +361,12 @@ export class MatchRoom extends Room<MatchState> {
         s.timeRemaining = C.MATCH.liveMs;
         s.scoreTeam0 = 0;
         s.scoreTeam1 = 0;
+        // do NOT re-spawn here: everyone was frozen at their spawn through warmup,
+        // so the round goes live in place. Re-spawning teleported players to a new
+        // random point the instant the match started, which felt like a reset.
         this.state.players.forEach((p) => {
           p.kills = 0;
           p.deaths = 0;
-          this.spawn(p);
         });
       }
     } else if (s.phase === "live") {

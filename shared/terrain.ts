@@ -171,6 +171,8 @@ export interface LandmarkProp {
   h: number;
   d: number;
   walkover?: boolean; // low object: no collision block
+  sink?: number; // metres to push the VISUAL model down into the ground (closes the
+  // gap under models whose lowest geometry is uneven, e.g. the log-hut base logs)
 }
 
 export interface Landmark {
@@ -225,17 +227,17 @@ export const LANDMARKS: Landmark[] = [
   {
     name: "Spawn Hut",
     x: 12, z: -50, r: 8,
-    props: [{ model: "@forest_hut", x: 12, z: -50, yaw: 0.6, w: 5.1, h: 3.5, d: 5.4 }],
+    props: [{ model: "@forest_hut", x: 12, z: -50, yaw: 0.6, w: 5.1, h: 3.5, d: 5.4, sink: 0.5 }],
   },
   {
     name: "West Hut",
     x: -42, z: 28, r: 8,
-    props: [{ model: "@forest_hut", x: -42, z: 28, yaw: -1.8, w: 5.1, h: 3.5, d: 5.4 }],
+    props: [{ model: "@forest_hut", x: -42, z: 28, yaw: -1.8, w: 5.1, h: 3.5, d: 5.4, sink: 0.5 }],
   },
   {
     name: "North Hut",
     x: 40, z: 50, r: 8,
-    props: [{ model: "@forest_hut", x: 40, z: 50, yaw: 2.4, w: 5.1, h: 3.5, d: 5.4 }],
+    props: [{ model: "@forest_hut", x: 40, z: 50, yaw: 2.4, w: 5.1, h: 3.5, d: 5.4, sink: 0.5 }],
   },
 ];
 

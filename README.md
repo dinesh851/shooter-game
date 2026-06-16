@@ -53,6 +53,27 @@ prompt the first time, or add Node under *System Settings -> Network -> Firewall
 > machine by another app). Override with the `PORT` env var on the server and
 > `VITE_SERVER_PORT` for the client if you need a different one.
 
+## Admin
+
+Any player can become **admin** from the lobby: type the admin key into the
+**admin key** box (bottom-right of the lobby) and press **ADMIN**.
+
+```
+ADMIN KEY:  rangerlead
+```
+
+Becoming admin:
+- **takes host** — you get the host controls (start match, add bots, weather).
+- unlocks **END MATCH** — force the current round back to the lobby for everyone.
+
+You can also **change your callsign** any time from the lobby (the **NAME** box,
+bottom-left). Renaming is normally lobby-only; admins may rename mid-match.
+
+> Change the key by setting the `ADMIN_PASSWORD` env var on the server before
+> `npm start` (e.g. `ADMIN_PASSWORD=hunter2 npm start`). If unset it defaults to
+> the key above. The check is server-side, so the key is never trusted from the
+> client.
+
 ## Verify it works (headless)
 
 With the server running (`npm run dev` or `npm start`), in another terminal:

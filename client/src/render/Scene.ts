@@ -5,6 +5,7 @@ import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPa
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { Soldier as Character, preloadSoldier } from "./Soldier";
+import { Butterflies, preloadButterflies } from "./Butterflies";
 import { MAP } from "../../../shared/mapdata";
 import { terrainHeight, inWater, WATER_LEVEL } from "../../../shared/terrain";
 import { grenadeStep, GrenadeBody } from "../../../shared/blockmap";
@@ -19,7 +20,8 @@ import { RainFx } from "./RainFx";
 import { buildShadeTexture, SUN_DIR } from "./Shade";
 import { Sunrays } from "./Sunrays";
 import { TEAM_COLORS, MAX_SPEED } from "../../../shared/phys";
-import { GrenadeThrowEv } from "../../../shared/protocol";
+import { ROCKET } from "../../../shared/constants";
+import { GrenadeThrowEv, RocketEv } from "../../../shared/protocol";
 
 interface Remote {
   char: Character;
@@ -98,6 +100,7 @@ export class Scene {
   private sunrays!: Sunrays;
   private water!: Water;
   private airFx!: AirFx;
+  private butterflies!: Butterflies;
   private rain!: RainFx;
   private sunLight!: THREE.DirectionalLight;
   private hemiLight!: THREE.HemisphereLight;
@@ -130,6 +133,11 @@ export class Scene {
   private adaptTime = 0;
   private grenadeVis: { mesh: THREE.Object3D; body: GrenadeBody; ttl: number }[] = [];
   private grenadeTpl?: THREE.Group;
+  // in-flight rocket missiles (visual): fly origin->impact, leaving a smoke trail
+  private rocketVis: { mesh: THREE.Group; pos: THREE.Vector3; dir: THREE.Vector3; remaining: number; puffT: number }[] = [];
+  private rocketTpl?: THREE.Group;
+  private rocketPuffs: { sp: THREE.Sprite; ttl: number; max: number }[] = [];
+  private smokeTex?: THREE.Texture;
   private shakeAmt = 0;
   private explosions: { mesh: THREE.Mesh; light: THREE.PointLight; ttl: number; max: number }[] = [];
   // a small fixed pool of explosion lights, added to the scene ONCE. Reused by
@@ -151,6 +159,21 @@ export class Scene {
   private gunHolder = new THREE.Group(); // holds the current gun model inside viewModel
   private gunTemplates: Record<string, THREE.Object3D> = {};
   private currentWeapon = "rifle";
+
+  // third-person view: the local player's OWN body (same Soldier model + gun as a
+  // remote), shown only while in TPV. The first-person gun viewmodel is hidden
+  // whenever TPV is on (vmThirdPerson).
+  private tpv = false;
+  private vmThirdPerson = false;
+  private localBody?: Character;
+  private localBodyGun?: THREE.Object3D;
+  private localBodyWeapon = "";
+  private localBodyTeam = -1;
+  private localBodyAlive = true;
+  private _tpFwd = new THREE.Vector3();
+  private _tpRight = new THREE.Vector3();
+  private _tpUp = new THREE.Vector3();
+  private _tpPos = new THREE.Vector3();
 
   constructor(container: HTMLElement) {
     // antialias off: we render through the EffectComposer, so canvas MSAA never
@@ -250,6 +273,7 @@ export class Scene {
     this.scene.add(this.camera);
     this.loadGuns();
     preloadSoldier(); // realistic remote-player model, loaded once
+    preloadButterflies(); // ambient animated butterflies
 
     this.composer = new EffectComposer(this.renderer);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
@@ -370,8 +394,89 @@ export class Scene {
   }
 
   private applyViewmodelVisible() {
-    // shown only when alive AND not looking through a scope
-    this.viewModel.visible = this.vmAlive && !this.vmScoped;
+    // shown only when alive, not scoped, and in first-person
+    this.viewModel.visible = this.vmAlive && !this.vmScoped && !this.vmThirdPerson;
+  }
+
+  // toggle third-person view. The real soldier body is rendered in BOTH views
+  // (true first-person: camera at the eyes, head hidden, so you see the actual
+  // rigged arms + gun). The procedural gun viewmodel is no longer used.
+  setThirdPerson(on: boolean) {
+    this.tpv = on;
+    this.vmThirdPerson = true;
+    this.applyViewmodelVisible();
+    if (this.localBody) {
+      this.localBody.root.visible = this.localBodyAlive;
+      this.localBody.setHeadHidden(!on); // first-person: hide head...
+      this.localBody.setLegsHidden(!on); // ...and legs, leaving just arms + gun
+    }
+  }
+
+  get thirdPerson(): boolean {
+    return this.tpv;
+  }
+
+  // hide/show the local body (death hides it; the corpse is a separate model)
+  setLocalBodyVisible(v: boolean) {
+    this.localBodyAlive = v;
+    if (this.localBody) this.localBody.root.visible = v;
+  }
+
+  // drive the local player's own body each frame. Built lazily once the team is
+  // known and rebuilt on a team switch. Only actually rendered while in TPV.
+  updateLocalBody(
+    dt: number, team: number, weapon: string,
+    x: number, y: number, z: number,
+    yaw: number, pitch: number, lean: number, crouch: boolean,
+    speedNorm: number, grounded: boolean
+  ) {
+    if (!this.localBody || this.localBodyTeam !== team) {
+      if (this.localBody) {
+        this.scene.remove(this.localBody.root);
+        this.localBody.dispose();
+        this.localBodyGun = undefined;
+      }
+      this.localBody = new Character(TEAM_COLORS[team] ?? 0x999999, TEAM_ACCENTS[team] ?? 0xffffff);
+      this.scene.add(this.localBody.root);
+      this.localBodyTeam = team;
+      this.localBodyWeapon = "";
+    }
+    if (weapon !== this.localBodyWeapon) {
+      this.localBodyWeapon = weapon;
+      if (this.localBodyGun) {
+        this.localBodyGun.parent?.remove(this.localBodyGun);
+        this.localBodyGun = undefined;
+      }
+      this.attachLocalGun();
+    }
+    const b = this.localBody;
+    b.root.position.set(x, y, z); // body stays put when leaning; the spine bends
+    b.root.rotation.y = yaw + Math.PI; // model faces +Z; yaw=0 faces -Z
+    b.setLean(lean);
+    b.setPitch(pitch);
+    b.setCrouch(this.tpv ? crouch : false); // first-person: no crouch hunch into the camera
+    b.setHeadHidden(!this.tpv); // first-person hides the head...
+    b.setLegsHidden(!this.tpv); // ...and the legs (arms + gun only)
+    // first-person: keep the body near-idle so the arms/gun don't bob violently
+    // ("the body comes too much" when running). Third-person animates fully.
+    b.update(dt, this.tpv ? speedNorm : speedNorm * 0.15, grounded);
+    this.localBodyAlive = true;
+    b.root.visible = true; // shown in both first- and third-person
+  }
+
+  private attachLocalGun() {
+    if (!this.localBody || this.localBodyGun) return;
+    const w = this.localBodyWeapon || "rifle";
+    const cfg = GUN_CONFIG[w] ?? GUN_CONFIG.rifle;
+    const tpl = this.gunTemplates[w] ?? this.gunTemplates["rifle"];
+    if (!tpl) return; // GLB not loaded yet; loadGuns() retries on arrival
+    const gun = tpl.clone(true);
+    fitModel(gun, cfg.len * 1.3);
+    const holder = new THREE.Group();
+    gun.rotation.set(cfg.rotX ?? 0, cfg.rotY + Math.PI, cfg.rotZ ?? 0);
+    holder.add(gun);
+    this.localBody.attachGun(holder);
+    this.localBodyGun = holder;
   }
 
   private buildMap() {
@@ -407,6 +512,10 @@ export class Scene {
     // falling leaves, fireflies/butterflies, rolling mist patches
     this.airFx = new AirFx(makeGlowTexture());
     this.scene.add(this.airFx.group);
+
+    // animated 3D butterflies fluttering through the forest
+    this.butterflies = new Butterflies();
+    this.scene.add(this.butterflies.group);
 
     // rain (hidden until the host dials it in)
     this.rain = new RainFx();
@@ -491,17 +600,24 @@ export class Scene {
     const load = (slot: string, url: string) =>
       loader.load(url, (g) => {
         prep(g.scene);
+        // the M72 model ships with a spare missile modeled below the tube; it
+        // shares materials with the launcher, so strip it by its geometry (the
+        // missile sits in the low-Y region, below the launcher + grip).
+        if (slot === "rocket") g.scene.traverse((o: any) => { if (o.isMesh) clipGeometryBelowY(o.geometry, -1.3); });
         this.gunTemplates[slot] = g.scene;
         if (this.currentWeapon === slot) this.refreshGunModel();
         // any remote still waiting for a gun model can mount one now
         this.remotes.forEach((rm) => {
           if (!rm.gun) this.attachRemoteGun(rm);
         });
+        // local third-person body too
+        if (this.localBody && !this.localBodyGun) this.attachLocalGun();
       });
     load("pistol", "/models/guns/hk_socom.glb");
     load("rifle", "/models/guns/ar.glb");
     load("smg", "/models/guns/smg2.glb");
     load("sniper", "/models/guns/akm.glb");
+    load("rocket", "/models/guns/m72_law.glb");
   }
 
   private refreshGunModel() {
@@ -888,6 +1004,102 @@ export class Scene {
     return g;
   }
 
+  // ---- rocket missile (flying visual + smoke trail) ----------------------
+  private buildRocketTpl(): THREE.Group {
+    const g = new THREE.Group();
+    const body = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.07, 0.07, 0.5, 10),
+      new THREE.MeshStandardMaterial({ color: 0x3a3d42, roughness: 0.6, metalness: 0.3, flatShading: true })
+    );
+    body.rotation.x = Math.PI / 2; // lie the cylinder along +Z (flight axis)
+    const nose = new THREE.Mesh(
+      new THREE.ConeGeometry(0.07, 0.16, 10),
+      new THREE.MeshStandardMaterial({ color: 0x9a2b22, roughness: 0.5, flatShading: true })
+    );
+    nose.rotation.x = Math.PI / 2;
+    nose.position.z = 0.33;
+    // four small tail fins
+    const finMat = new THREE.MeshStandardMaterial({ color: 0x2a2c30, roughness: 0.7, side: THREE.DoubleSide });
+    for (let i = 0; i < 4; i++) {
+      const fin = new THREE.Mesh(new THREE.PlaneGeometry(0.12, 0.1), finMat);
+      fin.position.z = -0.24;
+      fin.rotation.z = (i * Math.PI) / 2;
+      fin.position.x = Math.cos((i * Math.PI) / 2) * 0.07;
+      fin.position.y = Math.sin((i * Math.PI) / 2) * 0.07;
+      g.add(fin);
+    }
+    // bright motor flame at the tail
+    const flame = new THREE.Sprite(
+      new THREE.SpriteMaterial({ map: this.smokeTex ?? (this.smokeTex = makeSmokeTexture()), color: 0xffb24d, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false })
+    );
+    flame.scale.set(0.5, 0.5, 0.5);
+    flame.position.z = -0.34;
+    g.add(body, nose, flame);
+    return g;
+  }
+
+  spawnRocket(e: RocketEv) {
+    if (!this.smokeTex) this.smokeTex = makeSmokeTexture();
+    if (!this.rocketTpl) this.rocketTpl = this.buildRocketTpl();
+    const mesh = this.rocketTpl.clone();
+    const pos = new THREE.Vector3(e.ox, e.oy, e.oz);
+    const dir = new THREE.Vector3(e.ex - e.ox, e.ey - e.oy, e.ez - e.oz);
+    const remaining = dir.length();
+    dir.normalize();
+    mesh.position.copy(pos);
+    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), dir); // point +Z down the flight path
+    this.scene.add(mesh);
+    this.rocketVis.push({ mesh, pos, dir, remaining, puffT: 0 });
+  }
+
+  private updateRockets(dt: number) {
+    const speed = ROCKET.speed;
+    for (let i = this.rocketVis.length - 1; i >= 0; i--) {
+      const r = this.rocketVis[i];
+      const stepLen = Math.min(speed * dt, r.remaining);
+      r.pos.addScaledVector(r.dir, stepLen);
+      r.remaining -= stepLen;
+      r.mesh.position.copy(r.pos);
+      // smoke trail puffs along the path
+      r.puffT -= dt;
+      if (r.puffT <= 0) {
+        r.puffT = 0.018;
+        this.spawnRocketPuff(r.pos);
+      }
+      if (r.remaining <= 1e-3) {
+        this.scene.remove(r.mesh); // clone shares template geo/materials
+        this.rocketVis.splice(i, 1);
+      }
+    }
+    // fade + grow the trail puffs
+    for (let i = this.rocketPuffs.length - 1; i >= 0; i--) {
+      const p = this.rocketPuffs[i];
+      p.ttl -= dt;
+      if (p.ttl <= 0) {
+        this.scene.remove(p.sp);
+        (p.sp.material as THREE.SpriteMaterial).dispose();
+        this.rocketPuffs.splice(i, 1);
+        continue;
+      }
+      const k = p.ttl / p.max;
+      const m = p.sp.material as THREE.SpriteMaterial;
+      m.opacity = 0.5 * k;
+      const s = 0.5 + (1 - k) * 1.6;
+      p.sp.scale.set(s, s, s);
+    }
+  }
+
+  private spawnRocketPuff(pos: THREE.Vector3) {
+    if (this.rocketPuffs.length > 90) return; // safety cap
+    const sp = new THREE.Sprite(
+      new THREE.SpriteMaterial({ map: this.smokeTex, color: 0xbfbfbf, transparent: true, opacity: 0.5, depthWrite: false })
+    );
+    sp.position.copy(pos);
+    sp.scale.set(0.5, 0.5, 0.5);
+    this.scene.add(sp);
+    this.rocketPuffs.push({ sp, ttl: 0.7, max: 0.7 });
+  }
+
   spawnGrenade(e: GrenadeThrowEv) {
     if (!this.grenadeTpl) this.grenadeTpl = this.buildGrenadeTpl();
     const mesh = this.grenadeTpl.clone();
@@ -1027,6 +1239,25 @@ export class Scene {
     this.camera.rotation.z = roll;
   }
 
+  // third-person chase camera. Orientation is IDENTICAL to first-person, so the
+  // centre-screen crosshair still points exactly along the aim direction (shots
+  // use cameraForward); we only translate the camera back over the shoulder.
+  setCameraThirdPerson(px: number, pyEye: number, pz: number, yaw: number, pitch: number, roll = 0) {
+    this.camera.rotation.set(pitch, yaw, roll); // order "YXZ"
+    this._tpFwd.set(0, 0, -1).applyQuaternion(this.camera.quaternion);
+    this._tpRight.set(1, 0, 0).applyQuaternion(this.camera.quaternion);
+    this._tpUp.set(0, 1, 0).applyQuaternion(this.camera.quaternion);
+    const DIST = 3.4, SHOULDER = 0.65, RISE = 0.25;
+    this._tpPos.set(px, pyEye, pz)
+      .addScaledVector(this._tpFwd, -DIST)
+      .addScaledVector(this._tpRight, SHOULDER)
+      .addScaledVector(this._tpUp, RISE);
+    // never let the camera sink under the terrain
+    const minY = terrainHeight(this._tpPos.x, this._tpPos.z) + 0.35;
+    if (this._tpPos.y < minY) this._tpPos.y = minY;
+    this.camera.position.copy(this._tpPos);
+  }
+
   cameraForward(out: THREE.Vector3) {
     this.camera.getWorldDirection(out);
   }
@@ -1048,6 +1279,7 @@ export class Scene {
     this.sunrays.update(this.worldTime);
     this.water.update(this.worldTime, this.camera.position);
     this.airFx.update(this.worldTime, dt, this.camera.position);
+    this.butterflies.update(this.worldTime, dt, this.camera.position);
     if (this.rain.lines.visible) this.rain.update(this.worldTime, this.camera.position);
     this.localCorpse?.update(dt, 0, true); // animate the fall, hold the pose
 
@@ -1233,6 +1465,9 @@ export class Scene {
       }
     }
 
+    // flying rocket missiles + their smoke trails
+    this.updateRockets(dt);
+
     // camera shake from nearby explosions (decays fast)
     if (this.shakeAmt > 0.001) {
       this.camera.position.x += (Math.random() - 0.5) * this.shakeAmt * 0.12;
@@ -1383,6 +1618,38 @@ function makeGlowTexture(): THREE.Texture {
   return t;
 }
 
+// drop every triangle whose vertices are all below `minY` (model-local). Used to
+// strip the spare missile modeled beneath the M72 launcher tube.
+function clipGeometryBelowY(geo: THREE.BufferGeometry, minY: number): void {
+  const pos = geo.attributes.position as THREE.BufferAttribute;
+  if (!pos) return;
+  const keep: number[] = [];
+  const tri = (a: number, b: number, c: number) => {
+    if (pos.getY(a) >= minY && pos.getY(b) >= minY && pos.getY(c) >= minY) keep.push(a, b, c);
+  };
+  const idx = geo.index;
+  if (idx) for (let i = 0; i < idx.count; i += 3) tri(idx.getX(i), idx.getX(i + 1), idx.getX(i + 2));
+  else for (let i = 0; i < pos.count; i += 3) tri(i, i + 1, i + 2);
+  geo.setIndex(keep);
+}
+
+// soft round grey/white puff used for the rocket motor flame and smoke trail
+function makeSmokeTexture(): THREE.Texture {
+  const s = 128;
+  const c = document.createElement("canvas");
+  c.width = c.height = s;
+  const ctx = c.getContext("2d")!;
+  const g = ctx.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
+  g.addColorStop(0, "rgba(255,255,255,1)");
+  g.addColorStop(0.5, "rgba(255,255,255,0.5)");
+  g.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, s, s);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
 // Scale an object so its longest dimension equals `targetLen`, then recentre it
 // at the origin. Used to fit downloaded gun models to a consistent size.
 function fitModel(obj: THREE.Object3D, targetLen: number): void {
@@ -1412,5 +1679,7 @@ const GUN_CONFIG: Record<string, GunCfg> = {
   smg: { len: 0.45, rotY: -Math.PI / 2, hip: [0.23, -0.24, -0.58], ads: [0, -0.155, -0.5] }, // muzzle along -X natively
   sniper: { len: 0.66, rotY: 0, hip: [0.24, -0.26, -0.74], ads: [0, -0.165, -0.66] }, // AKM already points down -Z
   pistol: { len: 0.4, rotY: Math.PI / 2, hip: [0.2, -0.22, -0.46], ads: [0, -0.15, -0.4] }, // HK Mark 23, long axis = X
+  // M72 LAW launcher tube, held pointing forward like the other guns
+  rocket: { len: 0.95, rotY: Math.PI / 2, hip: [0.26, -0.24, -0.7], ads: [0.12, -0.2, -0.66] },
 };
 

@@ -93,15 +93,41 @@ export class Hud {
   }
 
   hitmarker() {
+    this.el.hitmarker.classList.remove("kill");
     this.el.hitmarker.style.transition = "none";
     this.el.hitmarker.style.opacity = "1";
-    this.hitTimer = 0.12;
+    this.hitTimer = 0.2;
+  }
+
+  // a kill: bigger red X that lingers a little longer
+  killmarker() {
+    this.el.hitmarker.classList.add("kill");
+    this.el.hitmarker.style.transition = "none";
+    this.el.hitmarker.style.opacity = "1";
+    this.hitTimer = 0.5;
   }
 
   damageFlash() {
     this.el.damage.style.opacity = "0.9";
     // let the 0.9 actually paint, then let the CSS transition fade it out
     setTimeout(() => (this.el.damage.style.opacity = "0"), 50);
+  }
+
+  private protEl?: HTMLDivElement;
+  // show/hide the "spawn protected" banner (lazily created so no index.html edit)
+  setSpawnProtected(on: boolean) {
+    if (!this.protEl) {
+      this.protEl = document.createElement("div");
+      this.protEl.style.cssText =
+        "position:fixed;left:50%;top:18%;transform:translateX(-50%);z-index:20;" +
+        "pointer-events:none;display:none;font-family:var(--ui-font);font-weight:800;" +
+        "font-size:15px;letter-spacing:3px;color:#9fe7ff;text-shadow:0 0 10px rgba(80,180,255,0.8);" +
+        "border:1px solid rgba(120,200,255,0.5);border-radius:6px;padding:5px 14px;" +
+        "background:rgba(20,60,90,0.35)";
+      this.protEl.textContent = "◈ SPAWN PROTECTED";
+      document.body.appendChild(this.protEl);
+    }
+    this.protEl.style.display = on ? "block" : "none";
   }
 
   killfeed(killerName: string, victimName: string, killerTeam: number, victimTeam: number, head: boolean) {

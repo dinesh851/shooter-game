@@ -1,7 +1,7 @@
 // Weapon definitions shared by client (feel: spread, recoil, ADS, fire mode) and
 // server (authority: damage, fire interval, magazine, reload, range).
 
-export type WeaponId = "rifle" | "smg" | "pistol" | "sniper";
+export type WeaponId = "rifle" | "smg" | "pistol" | "sniper" | "rocket";
 
 export interface WeaponDef {
   id: WeaponId;
@@ -96,11 +96,31 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     recoilPitch: 0.04,
     recoilYaw: 0.01,
   },
+  rocket: {
+    id: "rocket",
+    name: "M72 LAW Rocket",
+    slot: 5,
+    // direct damage is handled by the blast (see ROCKET in constants); this is a
+    // nominal value. Single shot, slow reload — a heavy area weapon.
+    damage: 130,
+    headshotMult: 1.0,
+    fireIntervalMs: 900,
+    automatic: false,
+    magazine: 1,
+    reloadMs: 3400,
+    range: 260,
+    adsFov: 58,
+    spreadHip: 0.0, // fires straight where you aim
+    spreadAds: 0.0,
+    moveSpreadMult: 1.0,
+    recoilPitch: 0.06, // heavy kick
+    recoilYaw: 0.01,
+  },
 };
 
-export const WEAPON_LIST: WeaponDef[] = [WEAPONS.rifle, WEAPONS.smg, WEAPONS.pistol, WEAPONS.sniper];
+export const WEAPON_LIST: WeaponDef[] = [WEAPONS.rifle, WEAPONS.smg, WEAPONS.pistol, WEAPONS.sniper, WEAPONS.rocket];
 export const DEFAULT_WEAPON: WeaponId = "rifle";
 
 export function isWeaponId(s: string): s is WeaponId {
-  return s === "rifle" || s === "smg" || s === "pistol" || s === "sniper";
+  return s === "rifle" || s === "smg" || s === "pistol" || s === "sniper" || s === "rocket";
 }

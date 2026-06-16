@@ -32,13 +32,13 @@ export class Audio {
 
   shot(weapon: WeaponId) {
     const t = this.now();
-    const cfg: Record<WeaponId, { gain: number; dur: number; cut: number; thump: number }> = {
+    const cfg: Partial<Record<WeaponId, { gain: number; dur: number; cut: number; thump: number }>> = {
       rifle: { gain: 0.6, dur: 0.16, cut: 3200, thump: 120 },
       smg: { gain: 0.45, dur: 0.1, cut: 4200, thump: 160 },
       pistol: { gain: 0.55, dur: 0.14, cut: 2600, thump: 110 },
       sniper: { gain: 0.9, dur: 0.32, cut: 1800, thump: 70 },
     };
-    const c = cfg[weapon];
+    const c = cfg[weapon] ?? cfg.rifle!;
 
     // noise crack
     const src = this.ctx.createBufferSource();
@@ -107,6 +107,38 @@ export class Audio {
   ping() {
     this.blip(1180, 0.07, 0.22, "sine");
     this.blip(1480, 0.09, 0.18, "sine", 0.08);
+  }
+
+  // rocket launch: a sharp ignition crack + a rising whoosh as the motor lights
+  rocketLaunch() {
+    const t = this.now();
+    // whoosh: filtered noise sweeping up
+    const src = this.ctx.createBufferSource();
+    src.buffer = this.noiseBuf;
+    src.playbackRate.value = 0.7;
+    const bp = this.ctx.createBiquadFilter();
+    bp.type = "bandpass";
+    bp.frequency.setValueAtTime(300, t);
+    bp.frequency.exponentialRampToValueAtTime(1600, t + 0.4);
+    bp.Q.value = 0.7;
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(0.0, t);
+    g.gain.linearRampToValueAtTime(0.8, t + 0.05);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+    src.connect(bp).connect(g).connect(this.master);
+    src.start(t);
+    src.stop(t + 0.55);
+    // ignition thump
+    const osc = this.ctx.createOscillator();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(180, t);
+    osc.frequency.exponentialRampToValueAtTime(60, t + 0.25);
+    const og = this.ctx.createGain();
+    og.gain.setValueAtTime(0.7, t);
+    og.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+    osc.connect(og).connect(this.master);
+    osc.start(t);
+    osc.stop(t + 0.32);
   }
 
   boom() {

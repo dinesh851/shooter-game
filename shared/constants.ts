@@ -12,6 +12,10 @@ export const PATCH_RATE_MS = 50; // how often the server broadcasts state (20 Hz
 export const MAX_HEALTH = 100;
 export const RESPAWN_MS = 3000;
 
+// spawn protection: brief invulnerability after (re)spawning so you can't be
+// spawn-killed. Ends early the moment the protected player fires.
+export const SPAWN_PROTECT_MS = 3000;
+
 // passive health regeneration: untouched for delayMs, then recover
 export const REGEN = {
   delayMs: 4000,
@@ -45,6 +49,15 @@ export const GRENADE = {
   bounce: 0.35, // floor bounce energy kept
   friction: 0.6, // horizontal speed kept on bounce
   gravity: 24,
+};
+
+// Rocket launcher (M72 LAW): a fast straight-flying missile that detonates on
+// impact (player, terrain or obstacle) with a big area blast.
+export const ROCKET = {
+  speed: 60, // m/s visual travel speed of the missile
+  radius: 8.5, // blast radius (m)
+  maxDamage: 140, // damage at the epicentre, falls off to 0 at the radius edge
+  range: 260, // max travel before it detonates in the air
 };
 
 export const MAX_PLAYERS = 16;

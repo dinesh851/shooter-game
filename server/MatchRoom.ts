@@ -7,7 +7,7 @@ import { MatchState, Player } from "./state";
 const { Room } = colyseus;
 import { rayCapsule, raySphere, HEAD_RADIUS } from "./hitscan";
 import {
-  Msg, Ev, ShootCmd, GrenadeCmd, SwitchCmd, TracerEv, HitEv, KillEv, GrenadeThrowEv, ExplosionEv, PingEv,
+  Msg, Ev, ShootCmd, GrenadeCmd, SwitchCmd, TracerEv, HitEv, KillEv, GrenadeThrowEv, ExplosionEv, RocketEv, PingEv,
   WEATHER_KINDS,
 } from "../shared/protocol";
 import { terrainHeight } from "../shared/terrain";
@@ -18,6 +18,11 @@ import { rayObstructionT, grenadeStep } from "../shared/blockmap";
 import { WEAPONS, DEFAULT_WEAPON, isWeaponId } from "../shared/weapons";
 import * as C from "../shared/constants";
 
+// Admin password — players who enter this gain admin (take host + end match).
+// Documented in README.md so operators can find/change it. Override via the
+// ADMIN_PASSWORD env var without touching code.
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "rangerlead";
+
 export class MatchRoom extends Room<MatchState> {
   maxClients = C.MAX_PLAYERS;
 
@@ -26,6 +31,7 @@ export class MatchRoom extends Room<MatchState> {
   private lastShotAt = new Map<string, number>();
   private now = 0; // authoritative clock (ms since room start)
   private respawnAt = new Map<string, number>();
+  private spawnProtectUntil = new Map<string, number>(); // spawn-protection expiry
   private reloadEndsAt = new Map<string, number>();
   private simBudget = new Map<string, number>(); // ms of movement a player may simulate
   private grenades: {
@@ -41,6 +47,9 @@ export class MatchRoom extends Room<MatchState> {
     fuseAt: number;
   }[] = [];
   private grenadeSeq = 0;
+  // in-flight rockets: detonate at a precomputed impact point when they arrive
+  private rockets: { ex: number; ey: number; ez: number; arriveAt: number; owner: string; team: number }[] = [];
+  private rocketSeq = 0;
   private lastGrenadeAt = new Map<string, number>();
   private lastPingAt = new Map<string, number>();
   private lastDamageAt = new Map<string, number>();
@@ -118,6 +127,34 @@ export class MatchRoom extends Room<MatchState> {
       this.reloadEndsAt.delete(client.sessionId);
     });
 
+    // ---- admin ----
+    this.onMessage(Msg.Admin, (client, msg: { password?: string }) => {
+      const p = this.state.players.get(client.sessionId);
+      if (!p) return;
+      if ((msg?.password ?? "") !== ADMIN_PASSWORD) {
+        client.send(Msg.Admin, { ok: false });
+        return;
+      }
+      p.admin = true;
+      this.state.hostId = client.sessionId; // admin takes host
+      client.send(Msg.Admin, { ok: true });
+      console.log(`[MatchRoom] ${p.name} is now ADMIN + host`);
+    });
+    this.onMessage(Msg.EndMatch, (client) => {
+      const p = this.state.players.get(client.sessionId);
+      if (!p || !p.admin) return; // admin only
+      this.endToLobby();
+      console.log(`[MatchRoom] ${p.name} (admin) ended the match -> lobby`);
+    });
+    this.onMessage(Msg.SetName, (client, msg: { name?: string }) => {
+      const p = this.state.players.get(client.sessionId);
+      if (!p) return;
+      // renaming is a lobby/pre-game thing (admins may do it anytime)
+      if (this.state.phase !== "lobby" && !p.admin) return;
+      const name = String(msg?.name ?? "").slice(0, 16).trim();
+      if (name) p.name = name;
+    });
+
     this.setSimulationInterval((dt) => this.tick(dt), C.TICK_MS);
     console.log("[MatchRoom] created");
   }
@@ -145,6 +182,7 @@ export class MatchRoom extends Room<MatchState> {
     this.inputs.delete(client.sessionId);
     this.lastShotAt.delete(client.sessionId);
     this.respawnAt.delete(client.sessionId);
+    this.spawnProtectUntil.delete(client.sessionId);
     this.reloadEndsAt.delete(client.sessionId);
     this.simBudget.delete(client.sessionId);
     // hand the lobby to the next human if the host left
@@ -265,6 +303,7 @@ export class MatchRoom extends Room<MatchState> {
     this.state.serverTime = this.now;
     this.updatePhase(dtMs);
     this.updateGrenades(dtMs);
+    this.updateRockets();
     this.updateBots(dtMs);
 
     this.state.players.forEach((p, id) => {
@@ -288,6 +327,9 @@ export class MatchRoom extends Room<MatchState> {
         if (this.now >= ra) this.spawn(p);
         return;
       }
+
+      // spawn protection expires after its window (also dropped early on firing)
+      if (p.protected && !this.isProtected(id)) p.protected = false;
 
       // health regen: untouched for a few seconds -> slowly recover
       if (p.health < C.MAX_HEALTH && this.now - (this.lastDamageAt.get(id) ?? 0) > C.REGEN.delayMs) {
@@ -367,6 +409,9 @@ export class MatchRoom extends Room<MatchState> {
         this.state.players.forEach((p) => {
           p.kills = 0;
           p.deaths = 0;
+          // fresh spawn protection so the opening seconds aren't a spawn-kill race
+          p.protected = true;
+          this.spawnProtectUntil.set(p.id, this.now + C.SPAWN_PROTECT_MS);
         });
       }
     } else if (s.phase === "live") {
@@ -388,6 +433,20 @@ export class MatchRoom extends Room<MatchState> {
     }
   }
 
+  // admin force-end: drop everyone straight back to the lobby (no end screen)
+  private endToLobby() {
+    this.state.phase = "lobby";
+    this.state.timeRemaining = 0;
+    this.state.scoreTeam0 = 0;
+    this.state.scoreTeam1 = 0;
+    this.grenades.length = 0;
+    this.rockets.length = 0;
+    this.state.players.forEach((p) => {
+      p.ready = p.bot;
+      this.spawn(p);
+    });
+  }
+
   private spawn(p: Player) {
     const opts = MAP.spawns.filter((sp) => sp.team === p.team);
     const sp = opts.length ? opts[Math.floor(Math.random() * opts.length)] : MAP.spawns[0];
@@ -403,10 +462,26 @@ export class MatchRoom extends Room<MatchState> {
     p.crouch = false;
     p.health = C.MAX_HEALTH;
     p.alive = true;
+    // brief spawn protection so you can't be killed before you can react
+    p.protected = true;
+    this.spawnProtectUntil.set(p.id, this.now + C.SPAWN_PROTECT_MS);
     if (!isWeaponId(p.weapon)) p.weapon = DEFAULT_WEAPON;
     p.ammo = WEAPONS[p.weapon as keyof typeof WEAPONS].magazine;
     p.reloading = false;
     this.reloadEndsAt.delete(p.id);
+  }
+
+  // spawn protection makes a player un-hittable for a few seconds after spawning
+  private isProtected(id: string): boolean {
+    return this.now < (this.spawnProtectUntil.get(id) ?? 0);
+  }
+
+  // protection ends the instant you fire (so you can't shoot from behind a shield)
+  private endProtection(p: Player) {
+    if (this.spawnProtectUntil.has(p.id)) {
+      this.spawnProtectUntil.delete(p.id);
+      p.protected = false;
+    }
   }
 
   private startReload(id: string) {
@@ -426,6 +501,7 @@ export class MatchRoom extends Room<MatchState> {
     const last = this.lastGrenadeAt.get(client.sessionId) ?? -99999;
     if (this.now - last < C.GRENADE.cooldownMs) return;
     this.lastGrenadeAt.set(client.sessionId, this.now);
+    this.endProtection(p); // throwing drops your own spawn protection
 
     // cooking: holding the grenade burns fuse before the throw
     const held = Math.max(0, Math.min(cmd.heldMs ?? 0, C.GRENADE.fuseMs - 250));
@@ -465,27 +541,38 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private explodeGrenade(g: { x: number; y: number; z: number; owner: string; team: number }) {
-    const ev: ExplosionEv = { x: g.x, y: g.y, z: g.z };
+    this.explodeAt(g.x, g.y, g.z, g.owner, g.team, C.GRENADE.radius, C.GRENADE.maxDamage, "Grenade");
+  }
+
+  // a blast at a point: FX broadcast + area damage with falloff and cover. Shared
+  // by grenades and rockets (different radius / max damage / killfeed source).
+  private explodeAt(
+    x: number, y: number, z: number,
+    ownerId: string, team: number,
+    radius: number, maxDamage: number, source: string
+  ) {
+    const ev: ExplosionEv = { x, y, z };
     this.broadcast(Ev.Explosion, ev);
     if (this.state.phase !== "live") return; // FX always, damage only in a live round
 
-    const owner = this.state.players.get(g.owner);
+    const owner = this.state.players.get(ownerId);
     this.state.players.forEach((target, tid) => {
-      if (!target.alive || target.team === g.team) return; // no friendly fire / self
-      const dx = target.x - g.x;
-      const dy = target.y + 1.0 - g.y;
-      const dz = target.z - g.z;
+      if (!target.alive || target.team === team) return; // no friendly fire / self
+      if (this.isProtected(tid)) return; // spawn-protected players take no blast damage
+      const dx = target.x - x;
+      const dy = target.y + 1.0 - y;
+      const dz = target.z - z;
       const dist = Math.hypot(dx, dy, dz);
-      if (dist >= C.GRENADE.radius) return;
-      let dmg = C.GRENADE.maxDamage * (1 - dist / C.GRENADE.radius);
+      if (dist >= radius) return;
+      let dmg = maxDamage * (1 - dist / radius);
       // standing behind a tree/rock/hill shields most of the blast
-      const d = dist || 1;
-      if (rayObstructionT({ x: g.x, y: g.y + 0.1, z: g.z }, { x: dx / d, y: dy / d, z: dz / d }, dist) < dist) {
+      const dd = dist || 1;
+      if (rayObstructionT({ x, y: y + 0.1, z }, { x: dx / dd, y: dy / dd, z: dz / dd }, dist) < dist) {
         dmg *= 0.35;
       }
       target.health -= dmg;
       this.lastDamageAt.set(tid, this.now);
-      const hit: HitEv = { x: target.x, y: target.y + 1, z: target.z, victim: tid, shooter: g.owner };
+      const hit: HitEv = { x: target.x, y: target.y + 1, z: target.z, victim: tid, shooter: ownerId };
       this.broadcast(Ev.Hit, hit);
       if (target.health <= 0) {
         target.health = 0;
@@ -498,8 +585,8 @@ export class MatchRoom extends Room<MatchState> {
           else this.state.scoreTeam1++;
         }
         const kill: KillEv = {
-          killer: g.owner,
-          killerName: owner?.name ?? "Grenade",
+          killer: ownerId,
+          killerName: owner?.name ?? source,
           victim: tid,
           victimName: target.name,
           head: false,
@@ -523,7 +610,49 @@ export class MatchRoom extends Room<MatchState> {
     this.lastShotAt.set(client.sessionId, this.now);
     shooter.ammo--;
 
-    this.fireHitscan(shooter, { x: cmd.ox, y: cmd.oy, z: cmd.oz }, { x: cmd.dx, y: cmd.dy, z: cmd.dz });
+    if (shooter.weapon === "rocket") {
+      this.fireRocket(shooter, { x: cmd.ox, y: cmd.oy, z: cmd.oz }, { x: cmd.dx, y: cmd.dy, z: cmd.dz });
+    } else {
+      this.fireHitscan(shooter, { x: cmd.ox, y: cmd.oy, z: cmd.oz }, { x: cmd.dx, y: cmd.dy, z: cmd.dz });
+    }
+  }
+
+  // launch a rocket: raycast where it WILL hit (nearest enemy / terrain / block),
+  // spawn a visual missile that flies there, and detonate (area blast) on arrival.
+  private fireRocket(shooter: Player, o: { x: number; y: number; z: number }, dir: { x: number; y: number; z: number }) {
+    const dl = Math.hypot(dir.x, dir.y, dir.z) || 1;
+    const d = { x: dir.x / dl, y: dir.y / dl, z: dir.z / dl };
+
+    // nearest enemy along the ray
+    let bestT = C.ROCKET.range;
+    this.state.players.forEach((target, tid) => {
+      if (tid === shooter.id || !target.alive || target.team === shooter.team) return;
+      const h = playerHeightFor(target.crouch);
+      const hit = rayCapsule(o, d, target.x, target.y, target.z, h);
+      if (hit && hit.t < bestT) bestT = hit.t;
+    });
+    // terrain / solid obstacle along the ray (whichever is closer)
+    const obsT = rayObstructionT(o, d, bestT);
+    if (obsT < bestT) bestT = obsT;
+
+    const ex = o.x + d.x * bestT;
+    const ey = o.y + d.y * bestT;
+    const ez = o.z + d.z * bestT;
+    const travelMs = (bestT / C.ROCKET.speed) * 1000;
+    const id = ++this.rocketSeq;
+    this.rockets.push({ ex, ey, ez, arriveAt: this.now + travelMs, owner: shooter.id, team: shooter.team });
+    const ev: RocketEv = { id, ox: o.x, oy: o.y, oz: o.z, ex, ey, ez, travelMs };
+    this.broadcast(Ev.Rocket, ev);
+  }
+
+  private updateRockets() {
+    for (let i = this.rockets.length - 1; i >= 0; i--) {
+      const r = this.rockets[i];
+      if (this.now >= r.arriveAt) {
+        this.explodeAt(r.ex, r.ey, r.ez, r.owner, r.team, C.ROCKET.radius, C.ROCKET.maxDamage, "Rocket");
+        this.rockets.splice(i, 1);
+      }
+    }
   }
 
   // one hitscan shot from `shooter` — used by both clients and bots
@@ -532,6 +661,7 @@ export class MatchRoom extends Room<MatchState> {
     const dl = Math.hypot(dir.x, dir.y, dir.z) || 1;
     const d = { x: dir.x / dl, y: dir.y / dl, z: dir.z / dl };
     shooter.shots++;
+    this.endProtection(shooter); // shooting drops your own spawn protection
 
     let bestT = w.range;
     let hitId: string | null = null;
@@ -574,7 +704,7 @@ export class MatchRoom extends Room<MatchState> {
     const tracer: TracerEv = { ox: o.x, oy: o.y, oz: o.z, ex, ey, ez, shooter: shooter.id };
     this.broadcast(Ev.Tracer, tracer);
 
-    if (hitId && this.state.phase === "live") {
+    if (hitId && this.state.phase === "live" && !this.isProtected(hitId)) {
       const target = this.state.players.get(hitId)!;
       const dmg = w.damage * (headshot ? w.headshotMult : 1);
       target.health -= dmg;

@@ -14,6 +14,9 @@ export const Msg = {
   Ping: "pg", // spot/ping for teammates: { x, y, z }
   Lat: "lt", // latency probe: { t } echoed straight back by the server
   Weather: "wx", // host only: { w: "sunny" | "mist" | "heavy" | "rain" }
+  Admin: "adm", // claim admin with a password: { password } (also takes host)
+  EndMatch: "endm", // admin: force the match back to the lobby for everyone
+  SetName: "nm", // change your callsign (lobby only): { name }
 } as const;
 
 export const WEATHER_KINDS = ["sunny", "mist", "heavy", "rain"] as const;
@@ -41,7 +44,8 @@ export const Ev = {
   Hit: "hit", // a player took damage (blood / hitmarker)
   Kill: "kill", // killfeed entry
   GrenadeThrow: "gt", // a grenade was thrown (spawn the flying visual)
-  Explosion: "ex", // a grenade exploded (FX)
+  Rocket: "rk", // a rocket was launched (spawn the flying missile + trail)
+  Explosion: "ex", // a grenade/rocket exploded (FX)
   Ping: "ping", // a teammate pinged a location
 } as const;
 
@@ -61,6 +65,17 @@ export interface GrenadeThrowEv {
   vy: number;
   vz: number;
   fuseMs: number;
+}
+
+export interface RocketEv {
+  id: number;
+  ox: number; // launch origin
+  oy: number;
+  oz: number;
+  ex: number; // impact point (where it will detonate)
+  ey: number;
+  ez: number;
+  travelMs: number; // flight time from origin to impact
 }
 
 export interface ExplosionEv {

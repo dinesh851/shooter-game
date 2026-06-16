@@ -6,9 +6,9 @@ import { Hud } from "../ui/Hud";
 import { Minimap } from "../ui/Minimap";
 import { Audio } from "../audio/Audio";
 import {
-  Msg, Ev, ShootCmd, GrenadeCmd, SwitchCmd, TracerEv, HitEv, KillEv, GrenadeThrowEv, ExplosionEv, PingEv,
+  Msg, Ev, ShootCmd, GrenadeCmd, SwitchCmd, TracerEv, HitEv, KillEv, GrenadeThrowEv, ExplosionEv, RocketEv, PingEv,
 } from "../../../shared/protocol";
-import { InputCmd, MoveState, eyeHeightFor } from "../../../shared/phys";
+import { InputCmd, MoveState, eyeHeightFor, MAX_SPEED } from "../../../shared/phys";
 import { step as arcadeStep } from "../../../shared/arcade";
 import { grenadeStep, GrenadeBody, rayObstructionT } from "../../../shared/blockmap";
 import { inWater, WATER_LEVEL, terrainHeight } from "../../../shared/terrain";
@@ -51,6 +51,9 @@ export class Game {
   private lastPhase = "";
   private lastWeather = "";
   private wasV = false;
+  private tpv = true; // third-person view (default); toggle with T
+  private wasViewToggle = false;
+  private bodySpeed = 0; // smoothed locomotion speed for the local body animation
   // death cam + death screen
   private deathAt = 0;
   private deathPos = { x: 0, y: 0, z: 0 };
@@ -83,15 +86,24 @@ export class Game {
     this.fov = this.scene.baseFov;
     this.hud.show();
     this.scene.setWeapon(this.weapon);
+    this.scene.setThirdPerson(this.tpv); // default to third-person
     this.input.lock();
 
     // lobby overlay (team select / ready / host start) + end-of-round scoreboard
     this.lobby = new Lobby();
+    (window as any).__lobby = this.lobby; // dev: inspect/preview overlays
     this.lobby.onSelectTeam = (team) => this.room.send(Msg.SelectTeam, { team });
     this.lobby.onReady = (ready) => this.room.send(Msg.Ready, { ready });
     this.lobby.onStart = () => this.room.send(Msg.Start);
     this.lobby.onAddBot = () => this.room.send(Msg.AddBot);
     this.lobby.onWeather = (w) => this.room.send(Msg.Weather, { w });
+    this.lobby.onSetName = (name) => this.room.send(Msg.SetName, { name });
+    this.lobby.onClaimAdmin = (password) => this.room.send(Msg.Admin, { password });
+    this.lobby.onEndMatch = () => this.room.send(Msg.EndMatch);
+    // server replies to an admin claim with { ok }
+    this.room.onMessage(Msg.Admin, (e: { ok: boolean }) => {
+      if (!e.ok) this.lobby.adminDenied();
+    });
 
     // positional footsteps from other players
     this.scene.onRemoteStep = (x, z, crouch, water) => {
@@ -121,8 +133,17 @@ export class Game {
   private bindEvents() {
     this.room.onMessage(Ev.Tracer, (e: TracerEv) => {
       if (e.shooter === this.meId) {
-        // start the local player's tracer at the gun muzzle so it visibly streaks
-        this.scene.muzzleWorld(this.muzzle);
+        // start the local player's tracer at the gun muzzle so it visibly streaks.
+        // in third-person the camera is behind the body, so originate at the
+        // player's aim point (eye + a little forward) instead of the camera.
+        if (this.tpv) {
+          this.scene.cameraForward(this.fwd);
+          const eye = eyeHeightFor(this.pred.crouch);
+          this.muzzle.set(this.pred.x + this.leanX, this.pred.y + eye - 0.15, this.pred.z + this.leanZ);
+          this.muzzle.addScaledVector(this.fwd, 0.6);
+        } else {
+          this.scene.muzzleWorld(this.muzzle);
+        }
         this.scene.addTracer(this.muzzle.x, this.muzzle.y, this.muzzle.z, e.ex, e.ey, e.ez);
       } else {
         this.scene.addTracer(e.ox, e.oy, e.oz, e.ex, e.ey, e.ez);
@@ -147,6 +168,11 @@ export class Game {
       this.audio.ping();
     });
     this.room.onMessage(Ev.Kill, (e: KillEv) => {
+      // your kill: confirm it with a red kill marker + sound
+      if (e.killer === this.meId && e.victim !== this.meId) {
+        this.hud.killmarker();
+        this.audio.hit();
+      }
       // killcam-lite: mark where your killer shot from for a couple of seconds
       if (e.victim === this.meId) {
         this.killerName = e.killerName;
@@ -162,6 +188,7 @@ export class Game {
       this.hud.killfeed(e.killerName, e.victimName, kt, vt, e.head);
     });
     this.room.onMessage(Ev.GrenadeThrow, (e: GrenadeThrowEv) => this.scene.spawnGrenade(e));
+    this.room.onMessage(Ev.Rocket, (e: RocketEv) => this.scene.spawnRocket(e));
     this.room.onMessage(Ev.Explosion, (e: ExplosionEv) => {
       this.scene.addExplosion(e.x, e.y, e.z);
       this.audio.boom();
@@ -231,21 +258,50 @@ export class Game {
     this.leanX = Math.cos(effYaw) * this.leanAmt * LEAN;
     this.leanZ = -Math.sin(effYaw) * this.leanAmt * LEAN;
 
-    // camera: death cam orbits the body; otherwise first-person from prediction.
-    // dev: __freezeCam lets a diagnostic script position window.__camera by hand.
+    // view toggle: T flips between third- and first-person
+    const tNow = this.input.isDown("KeyT");
+    if (tNow && !this.wasViewToggle) {
+      this.tpv = !this.tpv;
+      this.scene.setThirdPerson(this.tpv);
+    }
+    this.wasViewToggle = tNow;
+
+    // camera: death cam orbits the body; otherwise first- or third-person from
+    // prediction. dev: __freezeCam lets a diagnostic script position the camera.
     if ((window as any).__freezeCam) {
       // leave the camera where the diagnostic put it
     } else if (me && !me.alive && this.deathAt) {
       this.updateDeathCam(now);
     } else {
       const eye = eyeHeightFor(this.pred.crouch);
-      this.scene.setCamera(
-        this.pred.x + this.leanX,
-        this.pred.y + eye,
-        this.pred.z + this.leanZ,
-        effYaw,
-        effPitch,
-        -this.leanAmt * 0.16 // gentle head tilt; 0.4 rad rolled the whole view
+      const cx = this.pred.x + this.leanX;
+      const cy = this.pred.y + eye;
+      const cz = this.pred.z + this.leanZ;
+      const roll = -this.leanAmt * 0.16; // gentle head tilt; 0.4 rad rolled the whole view
+      if (this.tpv && me && me.alive) {
+        this.scene.setCameraThirdPerson(cx, cy, cz, effYaw, effPitch, roll);
+      } else {
+        // first-person: nudge the eye forward a touch so less torso shows when
+        // looking down, and keep it at STANDING height even while crouched so the
+        // view doesn't sink into the (hunched) body and fill the screen.
+        const fo = 0.12;
+        const fpCy = this.pred.y + eyeHeightFor(false);
+        this.scene.setCamera(cx - Math.sin(effYaw) * fo, fpCy, cz - Math.cos(effYaw) * fo, effYaw, effPitch, roll);
+      }
+    }
+
+    // drive the local player's own body so it's visible in third-person
+    if (me && me.alive) {
+      // smooth the predicted speed: the raw per-frame value is jittery (prediction
+      // corrections), which made the idle/walk/run blend flicker and the legs
+      // stutter. Remotes interpolate, so they were already smooth.
+      const rawSpeed = Math.min(1, Math.hypot(this.pred.vx, this.pred.vz) / MAX_SPEED);
+      this.bodySpeed += (rawSpeed - this.bodySpeed) * Math.min(1, dt * 10);
+      this.scene.updateLocalBody(
+        dt, me.team, this.weapon,
+        this.pred.x, this.pred.y, this.pred.z,
+        effYaw, effPitch, this.leanAmt, this.pred.crouch,
+        this.bodySpeed, this.pred.onGround
       );
     }
 
@@ -405,6 +461,7 @@ export class Game {
     // your body drops where you stood; the death cam orbits it
     this.scene.spawnLocalCorpse(this.pred.x, this.pred.y, this.pred.z, this.input.yaw, me.team);
     this.scene.setViewmodelVisible(false);
+    this.scene.setLocalBodyVisible(false); // hide the live body; the corpse takes over
     this.scene.showGrenadeArc(null);
     this.gHoldStart = 0;
   }
@@ -473,7 +530,8 @@ export class Game {
     };
     this.room.send(Msg.Shoot, cmd);
 
-    this.audio.shot(this.weapon);
+    if (this.weapon === "rocket") this.audio.rocketLaunch();
+    else this.audio.shot(this.weapon);
     this.scene.flashMuzzle();
 
     // recoil kick (up + random horizontal)
@@ -569,6 +627,7 @@ export class Game {
     this.lastPhase = s.phase;
     if (me) {
       this.hud.setHealth(me.health);
+      this.hud.setSpawnProtected(!!me.protected && me.alive);
       this.hud.setWeaponHud(
         this.weapon,
         WEAPONS[this.weapon].name,

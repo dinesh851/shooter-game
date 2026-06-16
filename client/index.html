@@ -10,20 +10,27 @@
     <div id="app"></div>
 
     <!-- Start menu -->
-    <div id="menu" class="overlay">
-      <div class="panel">
-        <h1>LAN&nbsp;SHOOTER</h1>
-        <p class="sub">Office LAN · Team Deathmatch</p>
-        <label>Callsign</label>
-        <input id="name" maxlength="16" placeholder="Player" autocomplete="off" />
-        <button id="play">CONNECT</button>
+    <div id="menu" class="overlay menu">
+      <div class="menu-scan"></div>
+      <div class="menu-card">
+        <div class="menu-brand">
+          <span class="menu-tag">/// TACTICAL NETWORK ONLINE</span>
+          <h1>LAN<span>SHOOTER</span></h1>
+          <p class="sub">OFFICE WARFARE · TEAM DEATHMATCH</p>
+        </div>
+        <div class="menu-field">
+          <label for="name">CALLSIGN</label>
+          <input id="name" maxlength="16" placeholder="Operator" autocomplete="off" />
+        </div>
+        <button id="play"><span>DEPLOY</span></button>
         <p id="status" class="status"></p>
-        <ul class="controls">
-          <li><b>WASD</b> move · <b>Space</b> jump</li>
-          <li><b>Mouse</b> look · <b>Click</b> fire · <b>R</b> reload</li>
-          <li><b>Tab</b> scoreboard · <b>Esc</b> release mouse</li>
-        </ul>
+        <div class="menu-controls">
+          <div><kbd>WASD</kbd> move <kbd>Space</kbd> jump <kbd>Shift</kbd> crouch</div>
+          <div><kbd>LMB</kbd> fire <kbd>RMB</kbd> aim <kbd>R</kbd> reload <kbd>1-5</kbd> weapons</div>
+          <div><kbd>T</kbd> view <kbd>G</kbd> grenade <kbd>Tab</kbd> scores <kbd>Esc</kbd> release</div>
+        </div>
       </div>
+      <div class="menu-foot">v0.1 · <span id="menu-build">forest deployment</span></div>
     </div>
 
     <!-- HUD -->

@@ -33,6 +33,9 @@ export class Soldier {
   private walk?: THREE.AnimationAction;
   private run?: THREE.AnimationAction;
   private spine?: THREE.Object3D;
+  private headBone?: THREE.Object3D;
+  private headHidden = false;
+  private legsHidden = false;
   private handBone?: THREE.Object3D;
   private armR?: THREE.Object3D;
   private foreR?: THREE.Object3D;
@@ -71,8 +74,9 @@ export class Soldier {
     const build = () => {
       if (this.disposed || !template) return;
       const model = skeletonClone(template.scene) as THREE.Group;
-      // tint the uniform toward the team colour (keeps the texture detail)
-      const tint = new THREE.Color(teamColor).lerp(new THREE.Color(0xffffff), 0.45);
+      // tint the uniform hard toward the team colour so sides read at a glance
+      // (vivid blue / red). Only a touch of white keeps some texture luminance.
+      const tint = new THREE.Color(teamColor).lerp(new THREE.Color(0xffffff), 0.05);
       model.traverse((o: any) => {
         if (o.isMesh && o.material) {
           o.material = o.material.clone();
@@ -81,6 +85,7 @@ export class Soldier {
         }
         if (!this.spine && o.isBone && /Spine1$/.test(o.name)) this.spine = o;
         if (o.isBone) {
+          if (!this.headBone && /Head$/.test(o.name)) this.headBone = o;
           if (!this.handBone && /RightHand$/.test(o.name)) this.handBone = o;
           if (!this.armR && /RightArm$/.test(o.name)) this.armR = o;
           if (!this.foreR && /RightForeArm$/.test(o.name)) this.foreR = o;
@@ -157,8 +162,17 @@ export class Soldier {
     // the whole aim frame tilts with the player's pitch around a chest pivot,
     // so the gun and both hands track where they're looking (up/down)
     _qPitch.setFromAxisAngle(_xAxis, -this.pitchAmt);
-    const gripR = aimTarget(_t1.set(0.1, 1.18, 0.34), m);
-    const gripL = aimTarget(_t2.set(0.02, 1.26, 0.52), m);
+    // anchor the grip to the ANIMATED chest (spine) instead of a fixed body
+    // point, so the weapon stays glued to the torso through the walk/run bob
+    // rather than the arms stretching toward a static target (which flailed).
+    let cx = 0.04, cy = 1.30, cz = 0.0; // fallback chest, in root-local space
+    if (this.spine) {
+      const sp = this.spine.getWorldPosition(_v3);
+      this.root.worldToLocal(sp);
+      cx = sp.x; cy = sp.y; cz = sp.z;
+    }
+    const gripR = aimTarget(_t1.set(cx + 0.06, cy - 0.12, cz + 0.34), m);
+    const gripL = aimTarget(_t2.set(cx - 0.04, cy - 0.04, cz + 0.52), m);
     if (this.armR && this.foreR && this.handBone) {
       aimBone(this.armR, this.foreR, gripR);
       aimBone(this.foreR, this.handBone, gripR);
@@ -211,6 +225,11 @@ export class Soldier {
     this.run?.setEffectiveWeight(runW);
     this.mixer.update(dt);
 
+    // first-person: collapse the head bone so the camera (at the eyes) isn't
+    // looking at the inside of the skull. Re-applied each frame in case a clip
+    // animates head scale.
+    if (this.headBone) this.headBone.scale.setScalar(this.headHidden ? 1e-3 : 1);
+
     // crouch: sink the hips and IK the legs so the feet stay planted
     this.crouchK += (this.crouchTarget - this.crouchK) * Math.min(1, dt * 10);
     if (this.crouchK > 0.01) this.poseCrouch();
@@ -226,6 +245,13 @@ export class Soldier {
     // peek: bend the spine after the mixer has posed the skeleton
     if (this.spine && Math.abs(this.leanAmt) > 0.01) {
       this.spine.rotation.z += this.leanAmt * 0.45;
+    }
+
+    // first-person: collapse the legs so only the arms + gun (a clean viewmodel)
+    // show, instead of the whole body filling the screen when looking down.
+    if (this.legsHidden) {
+      this.upLegL?.scale.setScalar(1e-3);
+      this.upLegR?.scale.setScalar(1e-3);
     }
   }
 
@@ -264,6 +290,21 @@ export class Soldier {
 
   setCrouch(crouch: boolean): void {
     this.crouchTarget = crouch ? 1 : 0;
+  }
+
+  // hide the head in first-person so the camera at the eyes sees only arms/gun
+  setHeadHidden(hidden: boolean): void {
+    this.headHidden = hidden;
+  }
+
+  // hide the legs in first-person so only the arms + gun fill the view
+  setLegsHidden(hidden: boolean): void {
+    if (this.legsHidden === hidden) return;
+    this.legsHidden = hidden;
+    if (!hidden) {
+      this.upLegL?.scale.setScalar(1);
+      this.upLegR?.scale.setScalar(1);
+    }
   }
 
   // death/respawn: true plays a fall-over, false restores the standing pose

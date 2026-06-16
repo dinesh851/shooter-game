@@ -43,7 +43,7 @@ body {
   display: none !important;
 }
 
-/* ---------- Menu ---------- */
+/* ---------- Menu (modern tactical) ---------- */
 .overlay {
   position: fixed;
   inset: 0;
@@ -53,92 +53,149 @@ body {
   z-index: 10;
 }
 
-.panel {
-  width: 360px;
-  padding: 28px 28px 22px;
-  background: var(--panel-bg);
+.menu {
+  background:
+    radial-gradient(120% 90% at 50% -10%, rgba(255, 214, 110, 0.08), transparent 60%),
+    radial-gradient(circle at 50% 35%, #161b24, #07090d 75%);
+  overflow: hidden;
+}
+/* faint moving scanlines for a tactical-HUD feel */
+.menu-scan {
+  position: absolute;
+  inset: 0;
+  background-image: repeating-linear-gradient(
+    0deg, rgba(255, 255, 255, 0.025) 0 1px, transparent 1px 3px
+  );
+  pointer-events: none;
+  opacity: 0.6;
+}
+
+.menu-card {
+  position: relative;
+  width: 420px;
+  padding: 34px 34px 26px;
+  background: linear-gradient(180deg, rgba(22, 27, 36, 0.96), rgba(14, 17, 23, 0.96));
+  border: 1px solid rgba(255, 214, 110, 0.22);
+  border-radius: 4px;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.65), inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 18px), calc(100% - 18px) 100%, 0 100%);
+}
+/* accent corner ticks */
+.menu-card::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 0;
+  width: 46px; height: 3px;
+  background: var(--accent);
+  box-shadow: 0 0 14px rgba(255, 214, 110, 0.7);
+}
+
+.menu-brand { text-align: left; margin-bottom: 22px; }
+.menu-tag {
+  display: inline-block;
+  font-size: 10px;
+  letter-spacing: 3px;
+  color: var(--accent);
+  opacity: 0.85;
+  margin-bottom: 10px;
+}
+.menu-card h1 {
+  font-size: 38px;
+  font-weight: 900;
+  letter-spacing: 2px;
+  line-height: 0.95;
+  color: #fff;
+}
+.menu-card h1 span { color: var(--accent); margin-left: 2px; }
+.menu-card .sub {
+  color: var(--text-dim);
+  margin-top: 8px;
+  font-size: 12px;
+  letter-spacing: 2px;
+}
+
+.menu-field { margin-bottom: 4px; }
+.menu-field label {
+  display: block;
+  text-align: left;
+  font-size: 11px;
+  letter-spacing: 2px;
+  color: var(--text-dim);
+  margin-bottom: 7px;
+}
+.menu-field input {
+  width: 100%;
+  padding: 13px 14px;
+  background: #0a0d12;
   border: 1px solid var(--panel-border);
-  border-radius: var(--radius);
-  box-shadow: var(--panel-glow);
+  border-left: 3px solid var(--accent);
+  border-radius: 3px;
+  color: #fff;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.menu-field input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px rgba(255, 214, 110, 0.4), 0 0 18px rgba(255, 214, 110, 0.15);
+}
+
+#play {
+  width: 100%;
+  margin-top: 18px;
+  padding: 14px;
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: 4px;
+  color: #120d02;
+  background: linear-gradient(180deg, #ffe08a, var(--accent));
+  border: 0;
+  border-radius: 3px;
+  cursor: pointer;
+  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+  transition: filter 0.15s, transform 0.05s;
+}
+#play:hover { filter: brightness(1.12); }
+#play:active { transform: translateY(1px); }
+#play:disabled { filter: grayscale(0.6) brightness(0.8); cursor: default; }
+
+.status {
+  min-height: 16px;
+  margin-top: 12px;
+  font-size: 12px;
+  letter-spacing: 1px;
+  color: var(--t1);
   text-align: center;
 }
 
-.panel h1 {
-  font-size: 30px;
-  letter-spacing: 6px;
-  background: linear-gradient(90deg, var(--grad-a), var(--grad-b));
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
-
-.panel .sub {
-  color: var(--text-dim);
-  margin: 6px 0 22px;
-  font-size: 13px;
-  letter-spacing: 1px;
-}
-
-.panel label {
-  display: block;
-  text-align: left;
-  font-size: 12px;
-  color: var(--text-dim);
-  margin-bottom: 6px;
-}
-
-.panel input {
-  width: 100%;
-  padding: 11px 12px;
-  background: #0e1117;
-  border: 1px solid var(--panel-border);
-  border-radius: 8px;
-  color: #fff;
-  font-size: 15px;
-  outline: none;
-}
-
-.panel input:focus {
-  border-color: var(--t0);
-}
-
-.panel button {
-  width: 100%;
-  margin-top: 16px;
-  padding: 12px;
-  font-size: 15px;
-  font-weight: 700;
-  letter-spacing: 2px;
-  color: #06121f;
-  background: linear-gradient(90deg, var(--grad-a), var(--grad-b));
-  border: 0;
-  border-radius: 8px;
-  cursor: pointer;
-}
-
-.panel button:active {
-  transform: translateY(1px);
-}
-
-.panel .status {
-  min-height: 18px;
-  margin-top: 12px;
-  font-size: 13px;
-  color: var(--t1);
-}
-
-.controls {
-  list-style: none;
-  margin-top: 18px;
+.menu-controls {
+  margin-top: 20px;
   padding-top: 16px;
-  border-top: 1px solid #222b36;
-  font-size: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 11px;
   color: var(--text-dim);
-  line-height: 1.9;
+  line-height: 2.1;
+  letter-spacing: 0.5px;
 }
-
-.controls b {
-  color: var(--text);
+.menu-controls kbd {
+  display: inline-block;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 3px;
+  padding: 1px 6px;
+  margin: 0 2px;
+  font-size: 10px;
+  color: var(--text-bright);
+  font-family: var(--ui-font);
+}
+.menu-foot {
+  position: absolute;
+  bottom: 16px;
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: rgba(255, 255, 255, 0.25);
 }
 
 /* ---------- HUD ---------- */
@@ -480,12 +537,47 @@ body {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 22px;
-  height: 22px;
-  margin: -11px 0 0 -11px;
+  width: 30px;
+  height: 30px;
+  margin: -15px 0 0 -15px;
   opacity: 0;
-  background: radial-gradient(circle, transparent 38%, #fff 40%, transparent 52%);
   transform: rotate(45deg);
+  pointer-events: none;
+}
+/* four diagonal ticks (X with a centre gap), like a classic FPS hitmarker */
+#hitmarker::before,
+#hitmarker::after {
+  content: "";
+  position: absolute;
+  filter: drop-shadow(0 0 1.5px rgba(0, 0, 0, 0.95));
+}
+#hitmarker::before {
+  left: 50%;
+  top: 0;
+  width: 3px;
+  height: 100%;
+  margin-left: -1.5px;
+  background: linear-gradient(to bottom, #fff 0 36%, transparent 36% 64%, #fff 64% 100%);
+}
+#hitmarker::after {
+  top: 50%;
+  left: 0;
+  height: 3px;
+  width: 100%;
+  margin-top: -1.5px;
+  background: linear-gradient(to right, #fff 0 36%, transparent 36% 64%, #fff 64% 100%);
+}
+/* kill: bigger + red */
+#hitmarker.kill {
+  width: 40px;
+  height: 40px;
+  margin: -20px 0 0 -20px;
+}
+#hitmarker.kill::before {
+  background: linear-gradient(to bottom, #ff4338 0 36%, transparent 36% 64%, #ff4338 64% 100%);
+}
+#hitmarker.kill::after {
+  background: linear-gradient(to right, #ff4338 0 36%, transparent 36% 64%, #ff4338 64% 100%);
 }
 
 .damage {

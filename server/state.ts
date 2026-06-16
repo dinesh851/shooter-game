@@ -24,6 +24,7 @@ export class Player extends Schema {
   // combat
   @type("number") health = 100;
   @type("boolean") alive = true;
+  @type("boolean") protected = false; // spawn protection: invulnerable + can't be hit
   @type("string") weapon = "rifle";
   @type("number") ammo = 30;
   @type("boolean") reloading = false;
@@ -33,6 +34,7 @@ export class Player extends Schema {
   // lobby + end-of-match stats
   @type("boolean") ready = false;
   @type("boolean") bot = false;
+  @type("boolean") admin = false; // claimed admin (can end match, take host)
   @type("number") shots = 0;
   @type("number") hits = 0;
   @type("number") longest = 0; // longest kill distance (m)
